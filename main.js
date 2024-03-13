@@ -1,11 +1,10 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
-const token = "";
-const chatId = 0;
+const token = process.env.TG_TOKEN;
 const urlAPIWhether = 'https://api.openweathermap.org/data/2.5/forecast';
 const urlAPIFoundCity = 'http://api.openweathermap.org/geo/1.0/direct';
-const apiKey = '';
+const apiKey = process.env.WEATHER_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
