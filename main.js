@@ -2,6 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const http = require('http');
 const socketio = require('socket.io');
+const socketioClient = require('socket.io-client');
 
 const token = process.env.TG_TOKEN;
 const urlAPIWhether = 'https://api.openweathermap.org/data/2.5/forecast';
@@ -10,25 +11,31 @@ const apiKey = process.env.WEATHER_API_KEY;
 const PORT = process.env.PORT || 3000;
 
 const server = http.createServer((req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain'})
+    res.writeHead(200, { 'Content-Type': 'text/plain' })
     res.end('Server is running\n');
-  })
+})
 
-  const io = socketio(server);
+const io = socketio(server);
+const ioClient = socketioClient(`http://localhost:${PORT}`);
 
-  setInterval(() => {
-    io.emit('keepAlive', {message: 'Server is alive!'});
-  // }, 300000);
-  }, 10000);
+setInterval(() => {
+    console.log("Sending awake request!");
 
-  io.on('connection', (socket) => {
+    ioClient.emit('keepAlive', { message: 'Server is alive!' });
+}, 300000);
+
+
+io.on('connection', (socket) => {
     console.log('A client connected');
-    // You can perform any necessary operations here when a client connects
-  });
 
-  server.listen(PORT, () => {
+    socket.on('keepAlive', (data) => {
+        console.log('Keep alive message received:', data);
+    });
+});
+
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-  });
+});
 
 const bot = new TelegramBot(token, { polling: true });
 console.log('Telegram bot successfully started...\n');
