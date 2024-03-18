@@ -7,6 +7,7 @@ const socketioClient = require('socket.io-client');
 const token = process.env.TG_TOKEN;
 const urlAPIWhether = 'https://api.openweathermap.org/data/2.5/forecast';
 const urlAPIFoundCity = 'http://api.openweathermap.org/geo/1.0/direct';
+const hostingUrl=process.env.HOSTING_URL;
 const apiKey = process.env.WEATHER_API_KEY;
 const PORT = process.env.PORT || 3000;
 
@@ -16,7 +17,7 @@ const server = http.createServer((req, res) => {
 })
 
 const io = socketio(server);
-const ioClient = socketioClient(`http://localhost:${PORT}`);
+const ioClient = socketioClient(hostingUrl);
 
 setInterval(() => {
     console.log("Sending awake request!");
