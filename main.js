@@ -45,6 +45,11 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const city = msg.text;
 
+    if(msg.text==='/start'){
+        sendTextMessage(chatId, 'Введіть місто:');
+        return;
+    }
+
     bot.sendMessage(chatId, `Прогноз погоди в ${city}:`, {
         reply_markup: {
             inline_keyboard: [
