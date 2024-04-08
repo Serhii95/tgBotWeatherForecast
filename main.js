@@ -7,9 +7,11 @@ const socketioClient = require('socket.io-client');
 const token = process.env.TG_TOKEN;
 const urlAPIWhether = 'https://api.openweathermap.org/data/2.5/forecast';
 const urlAPIFoundCity = 'http://api.openweathermap.org/geo/1.0/direct';
-const hostingUrl=process.env.HOSTING_URL;
+const hostingUrl = process.env.HOSTING_URL;
 const apiKey = process.env.WEATHER_API_KEY;
 const PORT = process.env.PORT || 3000;
+
+const userCity = {};
 
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' })
@@ -41,43 +43,64 @@ server.listen(PORT, () => {
 const bot = new TelegramBot(token, { polling: true });
 console.log('Telegram bot successfully started...\n');
 
+bot.onText(/\/start|Оновити місто/, (msg) => {
+    const chatId = msg.chat.id;
+    userCity[chatId] = {};
+    askForCity(chatId);
+});
+
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const city = msg.text;
 
-    if(msg.text==='/start'){
-        sendTextMessage(chatId, 'Введіть місто:');
-        return;
+    if (userCity[chatId] && userCity[chatId].waitingForCity) {
+        userCity[chatId].city = city;
+        userCity[chatId].waitingForCity = false;
+        await sendWeatherMenuKeyboard(chatId, city);
     }
-
-    bot.sendMessage(chatId, `Прогноз погоди в ${city}:`, {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: 'З 3-годинним інтервалом', callback_data: '3hourInterval' }],
-                [{ text: 'З 6-годинним інтервалом', callback_data: '6hourInterval' }]
-            ]
-        }
-    });
 });
 
-bot.on('callback_query', async (callbackQuery) => {
-    const chatId = callbackQuery.message.chat.id;
-    const interval = callbackQuery.data;
-    const city = callbackQuery.message.text.replace('Прогноз погоди в ', '').replace(':', '');
+bot.onText(/Погода в місті (.+)$/, async (msg) => {
+    const chatId = msg.chat.id;
+    sendIntervals(chatId);
+});
 
-    const cityCoords = await getLatitudeAndLongitude(city);
-    const response = await getWeather(cityCoords.lat, cityCoords.lon);
+bot.onText(/З 3-годинним інтервалом|З 6-годинним інтервалом/, async (msg) => {
+    const chatId = msg.chat.id;
+    const interval = msg.text;
+    const city = userCity[chatId].city;
+    try {
+        const cityCoords = await getLatitudeAndLongitude(city);
 
-    let weatherDataArr = response.data.list;
-    if (interval === '6hourInterval') {
-        weatherDataArr = [];
-        for (let index = 0; index < response.data.list.length; index += 2) {
-            const element = response.data.list[index];
-            weatherDataArr.push(element);
+        if (cityCoords === null) {
+            sendTextMessage(chatId, `Місто не знайдено: ${city}`);
+            return;
         }
-    }
-    sendTextMessage(chatId, `Прогноз погоди в ${city}:\n${formatWeather(weatherDataArr)}`);
+
+        const weather = await getWeather(cityCoords.lat, cityCoords.lon);
+
+        let weatherDataArr = weather.list;
+        if (interval === 'З 6-годинним інтервалом') {
+            weatherDataArr = [];
+            for (let index = 0; index < weather.list.length; index += 2) {
+                const element = weather.list[index];
+                weatherDataArr.push(element);
+            }
+        }
+        await sendTextMessage(chatId, `Прогноз погоди в ${city}:\n${formatWeather(weatherDataArr)}`);
+        await sendIntervals(chatId);
+    } catch (error) {
+        console.error(error)
+        sendTextMessage(chatId, `Виникла помилка на сервері!`);
+    };
 })
+
+bot.on("polling_error", console.log);
+
+const askForCity = (chatId) => {
+    userCity[chatId].waitingForCity = true;
+    bot.sendMessage(chatId, 'Введіть місто');
+};
 
 async function getWeather(lat, lon) {
     return axios({
@@ -91,11 +114,15 @@ async function getWeather(lat, lon) {
             lang: 'ua'
         },
         responseType: 'json',
-    });
+    })
+        .then((response) => response.data)
+        .catch((error) => {
+            throw new Error("Виникла помилка отримання інформації про погоду в місті!", error)
+        });
 }
 
 async function getLatitudeAndLongitude(city) {
-    const response = await axios({
+    const data = await axios({
         url: urlAPIFoundCity,
         method: 'GET',
         params: {
@@ -104,16 +131,47 @@ async function getLatitudeAndLongitude(city) {
             appid: apiKey
         },
         responseType: 'json',
-    });
+    })
+        .then((response) => response.data)
+        .catch((error) => {
+            throw new Error("Виникла помилка отримання даних про місто!", error)
+        });
 
-    return {
-        lat: response.data[0].lat,
-        lon: response.data[0].lon
-    };
+    if (data && data.length) {
+        return {
+            lat: data[0].lat,
+            lon: data[0].lon
+        };
+    }
+
+    return null;
 }
 
-function sendTextMessage(chatId, text) {
-    bot.sendMessage(chatId, text);
+async function sendTextMessage(chatId, text) {
+    return bot.sendMessage(chatId, text);
+}
+
+async function sendWeatherMenuKeyboard(chatId, city) {
+    return bot.sendMessage(chatId, 'Натисніть на меню', {
+        reply_markup: {
+            keyboard: [
+                [`Погода в місті ${city}`]
+            ],
+            resize_keyboard: true
+        }
+    });
+}
+
+async function sendIntervals(chatId) {
+    return bot.sendMessage(chatId, 'Оберіть інтервал', {
+        reply_markup: {
+            keyboard: [
+                ['З 3-годинним інтервалом', 'З 6-годинним інтервалом'],
+                ['Оновити місто']
+            ],
+            resize_keyboard: true
+        }
+    });
 }
 
 function formatWeather(weatherDataArr) {
@@ -125,7 +183,7 @@ function formatWeather(weatherDataArr) {
         const date = new Date(weather.dt * 1000);
         const formattedDate = toFormattedDate(date);
         if (currentDate !== formattedDate) {
-            result += `${formattedDate}:\n`;
+            result += `\n${formattedDate}:\n`;
         }
         currentDate = formattedDate;
         const hour = toFormattedHours(date);
